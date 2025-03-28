@@ -2,148 +2,159 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#define popen _popen
-#define pclose _pclose
-#endif
+#define MAX_PROCESSES 1024
 
-#define BUFFER_SIZE 1024
+typedef struct {
+    char name[100];
+    int memory;
+} Process;
 
-// Function to execute a command and print its output.
-void run_command(const char *cmd) {
-    FILE *fp;
-    char buffer[BUFFER_SIZE];
+Process processes[MAX_PROCESSES];
+int process_count = 0;
 
-    fp = popen(cmd, "r");
+void print_header() {
+    printf("Content-Type: text/html\r\n\r\n");
+    printf("<!DOCTYPE html>\n<html lang='en'>\n<head>\n<title>Process Monitor</title>\n");
+    printf("<script src='https://cdn.tailwindcss.com'></script>\n");
+    printf("<script>\n");
+    printf("document.addEventListener('DOMContentLoaded', function () {\n");
+
+    // Filtering Logic
+    printf("  document.getElementById('search').addEventListener('input', function () {\n");
+    printf("    let filter = this.value.toLowerCase();\n");
+    printf("    document.querySelectorAll('.process-row').forEach(row => {\n");
+    printf("      let name = row.getAttribute('data-name').toLowerCase();\n");
+    printf("      row.style.display = name.includes(filter) ? '' : 'none';\n");
+    printf("    });\n");
+    printf("  });\n");
+
+    // Sorting Logic
+    printf("  document.querySelectorAll('.sortable').forEach(header => {\n");
+    printf("    header.addEventListener('click', function () {\n");
+    printf("      let column = this.getAttribute('data-column');\n");
+    printf("      let table = document.getElementById('process-table');\n");
+    printf("      let rows = Array.from(table.rows).slice(1);\n");
+    printf("      let ascending = this.getAttribute('data-order') === 'asc';\n");
+    printf("      rows.sort((a, b) => {\n");
+    printf("        let valA = a.cells[column].innerText;\n");
+    printf("        let valB = b.cells[column].innerText;\n");
+    printf("        return ascending ? valA.localeCompare(valB, undefined, { numeric: true }) : valB.localeCompare(valA, undefined, { numeric: true });\n");
+    printf("      });\n");
+    printf("      rows.forEach(row => table.appendChild(row));\n");
+    printf("      this.setAttribute('data-order', ascending ? 'desc' : 'asc');\n");
+    printf("    });\n");
+    printf("  });\n");
+
+    // Right-click context menu for process kill
+    printf("  document.querySelectorAll('.process-row').forEach(row => {\n");
+    printf("    row.addEventListener('contextmenu', function (event) {\n");
+    printf("      event.preventDefault();\n");
+    printf("      let processName = this.getAttribute('data-name');\n");
+    printf("      let contextMenu = document.getElementById('context-menu');\n");
+    printf("      contextMenu.style.display = 'block';\n");
+    printf("      contextMenu.style.left = event.pageX + 'px';\n");
+    printf("      contextMenu.style.top = event.pageY + 'px';\n");
+    printf("      document.getElementById('kill-btn').setAttribute('data-name', processName);\n");
+    printf("    });\n");
+    printf("  });\n");
+
+    // Hide context menu on click elsewhere
+    printf("  document.addEventListener('click', function () {\n");
+    printf("    document.getElementById('context-menu').style.display = 'none';\n");
+    printf("  });\n");
+
+    // Process kill function
+    printf("  document.getElementById('kill-btn').addEventListener('click', function () {\n");
+    printf("    let name = this.getAttribute('data-name');\n");
+    printf("    window.location.href = '?kill=' + name;\n");
+    printf("  });\n");
+
+    printf("});\n");
+    printf("</script>\n");
+
+    // Tailwind styling
+    printf("<style>\n");
+    printf(".hover-effect:hover { background-color: #f3f4f6; }\n");
+    printf("#context-menu {\n");
+    printf("  display: none; position: absolute; background: white; border: 1px solid #ccc;\n");
+    printf("  padding: 8px; box-shadow: 2px 2px 10px rgba(0,0,0,0.1);\n");
+    printf("}\n");
+    printf("</style>\n");
+
+    printf("</head>\n<body class='bg-gray-100 p-6'>\n");
+    printf("<div class='max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6'>\n");
+    printf("<h2 class='text-2xl font-bold mb-4 text-center'>Real-Time Process Monitoring</h2>\n");
+
+    // Search bar
+    printf("<input type='text' id='search' placeholder='Search process...' class='border p-2 w-full mb-4'>\n");
+}
+
+void print_footer() {
+    printf("<div id='context-menu'>\n");
+    printf("<button id='kill-btn' class='bg-red-500 text-white px-4 py-2 rounded cursor-pointer'>Kill Process</button>\n");
+    printf("</div>\n");
+    printf("</div>\n</body>\n</html>\n");
+}
+
+void get_processes() {
+    FILE *fp = popen("wmic process get Name,WorkingSetSize", "r");
     if (fp == NULL) {
-        printf("Error: Could not run command: %s\n", cmd);
+        printf("<p class='text-red-500'>Error fetching processes.</p>\n");
         return;
     }
-    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-        printf("%s", buffer);
+
+    char buffer[256];
+    fgets(buffer, sizeof(buffer), fp);
+
+    process_count = 0;
+    while (fgets(buffer, sizeof(buffer), fp)) {
+        char name[100];
+        int memory = 0;
+        sscanf(buffer, "%99s %d", name, &memory);
+        if (strlen(name) > 0) {
+            strcpy(processes[process_count].name, name);
+            processes[process_count].memory = memory / 1024; // Convert bytes to KB
+            process_count++;
+        }
     }
     pclose(fp);
-}
 
-// Function to URL-decode a string (basic version)
-void url_decode(char *src, char *dest) {
-    char *pstr = src;
-    char *pbuf = dest;
-    while (*pstr) {
-        if (*pstr == '%') {
-            if (pstr[1] && pstr[2]) {
-                char hex[3] = { pstr[1], pstr[2], '\0' };
-                *pbuf++ = (char) strtol(hex, NULL, 16);
-                pstr += 3;
-            }
-        } else if (*pstr == '+') {
-            *pbuf++ = ' ';
-            pstr++;
-        } else {
-            *pbuf++ = *pstr++;
-        }
+    printf("<table class='table-auto w-full border-collapse border border-gray-300' id='process-table'>\n");
+    printf("<thead>\n<tr class='bg-gray-200'>\n");
+    printf("<th class='border p-2 sortable' data-column='0' data-order='asc'>Process Name</th>\n");
+    printf("<th class='border p-2 sortable' data-column='1' data-order='asc'>Memory (KB)</th>\n");
+    printf("</tr>\n</thead>\n<tbody>\n");
+
+    for (int i = 0; i < process_count; i++) {
+        printf("<tr class='process-row hover-effect text-center' data-name='%s'>\n", processes[i].name);
+        printf("<td class='border p-2'>%s</td>\n", processes[i].name);
+        printf("<td class='border p-2'>%d KB</td>\n", processes[i].memory);
+        printf("</tr>\n");
     }
-    *pbuf = '\0';
+
+    printf("</tbody>\n</table>\n");
 }
 
-// Simple function to get the value of a query string parameter
-// Returns 1 if found, 0 otherwise. The result is copied into `value`.
-int get_query_param(const char *query, const char *param, char *value, size_t max_len) {
-    char *pos = strstr(query, param);
-    if (!pos)
-        return 0;
-
-    pos += strlen(param);
-    if (*pos != '=')
-        return 0;
-    pos++; // skip '='
-
-    char buffer[BUFFER_SIZE] = {0};
-    int i = 0;
-    while (*pos && *pos != '&' && i < BUFFER_SIZE - 1) {
-        buffer[i++] = *pos++;
-    }
-    buffer[i] = '\0';
-
-    // URL-decode the parameter value
-    char decoded[BUFFER_SIZE] = {0};
-    url_decode(buffer, decoded);
-
-    strncpy(value, decoded, max_len - 1);
-    value[max_len - 1] = '\0';
-    return 1;
-}
-
-int main(void) {
-    // Print the HTTP header required for CGI
-    printf("Content-Type: text/html\n\n");
-
-    // Check for process management actions from the query string
+void kill_process() {
     char *query_string = getenv("QUERY_STRING");
-    if (query_string && strlen(query_string) > 0) {
-        char action[50] = {0};
-        char pid[50] = {0};
-        
-        if (get_query_param(query_string, "action", action, sizeof(action)) &&
-            get_query_param(query_string, "pid", pid, sizeof(pid))) {
-            
-            if (strcmp(action, "kill") == 0) {
-                // Build the command to kill the process using taskkill on Windows
-                char cmd[BUFFER_SIZE] = {0};
-                snprintf(cmd, sizeof(cmd), "taskkill /PID %s /F", pid);
-                printf("<p class=\"text-red-600 font-bold\">Attempting to kill process with PID %s...</p>\n", pid);
-                printf("<pre class=\"bg-gray-200 p-4 rounded\">\n");
-                run_command(cmd);
-                printf("</pre>\n");
-            }
+    if (query_string && strstr(query_string, "kill=")) {
+        char name[100];
+        sscanf(query_string + 5, "%99s", name);
+        if (strlen(name) > 0) {
+            char command[200];
+            sprintf(command, "taskkill /IM %s /F", name);
+            system(command);
+            printf("<p class='text-green-500'>Process '%s' has been terminated.</p>\n", name);
+        } else {
+            printf("<p class='text-red-500'>Invalid process name.</p>\n");
         }
     }
+}
 
-    // Begin HTML output for the dashboard
-    printf("<!DOCTYPE html>\n");
-    printf("<html lang=\"en\">\n");
-    printf("<head>\n");
-    printf("    <meta charset=\"UTF-8\">\n");
-    printf("    <title>Real-Time Process Monitoring Dashboard</title>\n");
-    // Refresh every 20 seconds
-    printf("    <meta http-equiv=\"refresh\" content=\"20\">\n");
-    printf("    <link href=\"https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css\" rel=\"stylesheet\">\n");
-    printf("</head>\n");
-    printf("<body class=\"bg-gray-100 font-sans\">\n");
-    printf("  <div class=\"container mx-auto p-6 bg-white rounded shadow-md\">\n");
-    printf("    <h1 class=\"text-2xl font-bold text-gray-800\">Real-Time Process Monitoring Dashboard</h1>\n");
-
-    // Process Management Section
-    printf("    <h2 class=\"text-xl font-semibold text-gray-700 mt-4\">Process Management</h2>\n");
-    printf("    <form method=\"get\" action=\"process_monitor.cgi\" class=\"mt-4\">\n");
-    printf("      <label for=\"pid\" class=\"block text-gray-600\">Enter Process ID (PID) to kill:</label>\n");
-    printf("      <input type=\"text\" id=\"pid\" name=\"pid\" required class=\"border border-gray-300 p-2 rounded w-full mt-1\">\n");
-    // Hidden field to indicate the action
-    printf("      <input type=\"hidden\" name=\"action\" value=\"kill\">\n");
-    printf("      <input type=\"submit\" value=\"Kill Process\" class=\"bg-red-500 text-white p-2 rounded mt-2 hover:bg-red-600\">\n");
-    printf("    </form>\n");
-
-    // Display Process List using tasklist
-    printf("    <h2 class=\"text-xl font-semibold text-gray-700 mt-4\">Processes</h2>\n");
-    printf("    <pre class=\"bg-gray-200 p-4 rounded\">\n");
-    run_command("tasklist");
-    printf("    </pre>\n");
-
-    // Display CPU Load using WMIC
-    printf("    <h2 class=\"text-xl font-semibold text-gray-700 mt-4\">CPU Load Percentage</h2>\n");
-    printf("    <pre class=\"bg-gray-200 p-4 rounded\">\n");
-    run_command("wmic cpu get loadpercentage");
-    printf("    </pre>\n");
-
-    // Display Memory Information using WMIC
-    printf("    <h2 class=\"text-xl font-semibold text-gray-700 mt-4\">Memory Information</h2>\n");
-    printf("    <pre class=\"bg-gray-200 p-4 rounded\">\n");
-    run_command("wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Format:List");
-    printf("    </pre>\n");
-
-    printf("  </div>\n");
-    printf("</body>\n");
-    printf("</html>\n");
-
+int main() {
+    print_header();
+    get_processes();
+    kill_process();
+    print_footer();
     return 0;
 }
