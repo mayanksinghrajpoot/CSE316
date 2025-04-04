@@ -12,6 +12,22 @@ typedef struct {
 Process processes[MAX_PROCESSES];
 int process_count = 0;
 
+void run_command(const char *command) {
+    FILE *fp = popen(command, "r");
+    if (fp == NULL) {
+        printf("Failed to run command.\n");
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        printf("%s", line);
+    }
+
+    pclose(fp);
+}
+
+
 void print_header() {
     printf("Content-Type: text/html\r\n\r\n");
     printf("<!DOCTYPE html>\n<html lang='en'>\n<head>\n<title>Process Monitor</title>\n");
@@ -74,23 +90,39 @@ void print_header() {
 
     // Tailwind styling
     printf("<style>\n");
-    printf(".hover-effect:hover { background-color: #f3f4f6; }\n");
+    printf(".hover-effect:hover { background-color: #f3f4f6; border:3px solid #ccc }\n");
     printf("#context-menu {\n");
     printf("  display: none; position: absolute; background: white; border: 1px solid #ccc;\n");
     printf("  padding: 8px; box-shadow: 2px 2px 10px rgba(0,0,0,0.1);\n");
     printf("}\n");
     printf("</style>\n");
 
-    printf("</head>\n<body class='bg-gray-100 p-6'>\n");
-    printf("<div class='max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6'>\n");
+    printf("</head>\n<body class='bg-gray-400 p-6'>\n");
+    printf("<div class='max-w-4xl mx-auto bg-gray-300 shadow-lg rounded-lg p-6'>\n");
     printf("<h2 class='text-2xl font-bold mb-4 text-center'>Real-Time Process Monitoring</h2>\n");
 
+     // Display CPU Load using WMIC
+     printf("<div class='m-6 p-10 shadow-lg bg-gray-100'>\n");
+     printf("    <h2>CPU Load Percentage</h2>\n");
+     printf("    <pre>\n");
+     run_command("wmic cpu get loadpercentage");
+     printf("    </pre>\n");
+    printf("</div>\n");
+
+     // Display Memory Information using WMIC
+    printf("<div class='m-6 p-5 shadow-lg bg-gray-100'>\n");
+     printf("    <h2>Memory Information</h2>\n");
+     printf("    <pre>\n");
+     run_command("wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Format:List");
+     printf("    </pre>\n");
+    printf("</div>\n");
+
     // Search bar
-    printf("<input type='text' id='search' placeholder='Search process...' class='border p-2 w-full mb-4'>\n");
+    printf("<input type='text' id='search' placeholder='Search process...' class='border p-2 w-full mb-4  shadow-lg'>\n");
 }
 
 void print_footer() {
-    printf("<div id='context-menu'>\n");
+    printf("<div id='context-menu' class='shadow-md'>\n");
     printf("<button id='kill-btn' class='bg-red-500 text-white px-4 py-2 rounded cursor-pointer'>Kill Process</button>\n");
     printf("</div>\n");
     printf("</div>\n</body>\n</html>\n");
@@ -119,8 +151,8 @@ void get_processes() {
     }
     pclose(fp);
 
-    printf("<table class='table-auto w-full border-collapse border border-gray-300' id='process-table'>\n");
-    printf("<thead>\n<tr class='bg-gray-200'>\n");
+    printf("<table class='table-auto w-full border-collapse border border-gray-100 shadow-lg' id='process-table'>\n");
+    printf("<thead>\n<tr class='bg-gray-100'>\n");
     printf("<th class='border p-2 sortable' data-column='0' data-order='asc'>Process Name</th>\n");
     printf("<th class='border p-2 sortable' data-column='1' data-order='asc'>Memory (KB)</th>\n");
     printf("</tr>\n</thead>\n<tbody>\n");
